@@ -63,6 +63,17 @@ static Axis3f gyro; // Gyro axis data in deg/s
 static Axis3f acc;  // Accelerometer axis data in mG
 static Axis3f mag;  // Magnetometer axis data in testla
 
+static float magHeading; //Yaroslav's heading
+static float pathX=0;
+static float pathY=0;
+static float pathZ=0;
+static float speedX=0;
+static float speedY=0;
+static float speedZ=0;
+static float deltaAccX=0;
+static float deltaAccY=0;
+static float deltaAccZ=0;
+
 static float eulerRollActual;
 static float eulerPitchActual;
 static float eulerYawActual;
@@ -192,6 +203,27 @@ static void stabilizerTask(void* param)
     // Magnetometer not yet used more then for logging.
     imu9Read(&gyro, &acc, &mag);
 
+#define COMPAS_HEADING(a, b, magHeading_p) { \
+    if (a>0) *magHeading_p = 90 - atan2(b, a)*180 / M_PI; \
+    if (a<0) *magHeading_p = 270 - atan2(b, a)*180 /M_PI; \
+    if (a==0 && b<0) *magHeading_p = 180.0; \
+    if (a==0 && b>0) *magHeading_p = 0.0; \
+  }
+#define COMPAS_HEADING2(a, b, magHeading_p) { \
+    if (a>0) *magHeading_p = atan2(b, a)*180 / M_PI; \
+  }
+
+//#undef COMPAS_HEADING
+//#define COMPAS_HEADING COMPAS_HEADING2
+
+    /*switched to const y=0*/
+    if (!mag.y)
+    	COMPAS_HEADING(mag.x, mag.z, &magHeading)
+    else if (!mag.x)
+        	COMPAS_HEADING(mag.y, mag.z, &magHeading)
+    else
+        	COMPAS_HEADING(mag.x, mag.y, &magHeading)
+
     if (imu6IsCalibrated())
     {
       commanderGetRPY(&eulerRollDesired, &eulerPitchDesired, &eulerYawDesired);
@@ -212,6 +244,21 @@ static void stabilizerTask(void* param)
                                      eulerRollDesired, eulerPitchDesired, -eulerYawDesired,
                                      &rollRateDesired, &pitchRateDesired, &yawRateDesired);
         attitudeCounter = 0;
+
+        if ( deltaAccX == 0 && deltaAccY == 0 && deltaAccZ == 0 )
+        	deltaAccX = acc.x, deltaAccY = acc.y, deltaAccZ = acc.z;
+
+        speedX += (acc.x - deltaAccX)/250;
+        speedY += (acc.x - deltaAccX)/250;
+        speedZ += (acc.x - deltaAccX)/250;
+
+        if ( acc.x > 0 )
+        	pathX += speedX/250;
+        else
+        	pathX += -speedX/250;
+
+        pathY += speedY/250;
+        pathZ += speedZ/250;
       }
 
       // 100HZ
@@ -421,6 +468,15 @@ LOG_ADD(LOG_FLOAT, yaw, &eulerYawActual)
 LOG_ADD(LOG_UINT16, thrust, &actuatorThrust)
 LOG_GROUP_STOP(stabilizer)
 
+LOG_GROUP_START(accPath)
+LOG_ADD(LOG_FLOAT, pathX, &pathX)
+LOG_ADD(LOG_FLOAT, pathY, &pathY)
+LOG_ADD(LOG_FLOAT, pathZ, &pathZ)
+LOG_ADD(LOG_FLOAT, speedX, &speedX)
+LOG_ADD(LOG_FLOAT, speedY, &speedY)
+LOG_ADD(LOG_FLOAT, speedZ, &speedZ)
+LOG_GROUP_STOP(accPath)
+
 LOG_GROUP_START(acc)
 LOG_ADD(LOG_FLOAT, x, &acc.x)
 LOG_ADD(LOG_FLOAT, y, &acc.y)
@@ -439,6 +495,7 @@ LOG_GROUP_START(mag)
 LOG_ADD(LOG_FLOAT, x, &mag.x)
 LOG_ADD(LOG_FLOAT, y, &mag.y)
 LOG_ADD(LOG_FLOAT, z, &mag.z)
+LOG_ADD(LOG_FLOAT, heading, &magHeading)
 LOG_GROUP_STOP(mag)
 
 LOG_GROUP_START(motor)
