@@ -27,7 +27,10 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+#include "stabilizer_real_fly.h"
+
 #include "math.h"
+#include "stdlib.h"
 
 #include "system.h"
 #include "pm.h"
@@ -141,23 +144,11 @@ uint32_t motorPowerM2;
 uint32_t motorPowerM1;
 uint32_t motorPowerM3;
 
-uint32_t timeTryingHover=0;
-uint32_t motorLowerLimitPowerM4=0;
-uint32_t motorLowerLimitPowerM2=0;
-uint32_t motorLowerLimitPowerM1=0;
-uint32_t motorLowerLimitPowerM3=0;
-
-uint32_t motorUpperLimitPowerM4=0;
-uint32_t motorUpperLimitPowerM2=0;
-uint32_t motorUpperLimitPowerM1=0;
-uint32_t motorUpperLimitPowerM3=0;
-
 static bool isInit;
 
 static void stabilizerAltHoldUpdate(void);
 static void distributePower(const uint16_t thrust, const int16_t roll,
                             const int16_t pitch, const int16_t yaw);
-static void CircleStabilizer();
 static uint16_t limitThrust(int32_t value);
 static void stabilizerTask(void* param);
 static float constrain(float value, const float minVal, const float maxVal);
@@ -412,73 +403,6 @@ static void stabilizerAltHoldUpdate(void)
   }
 }
 
-/*******************************************************************
- * Circle stabilizer code begins
- * */
-
-#define CIRCLE_STABILIZER_AMPLITUDE_MOTOR 3000
-#define CIRCLE_STABILIZER_MSTIME_TO_ENABLE 2000
-#define MOTOR_STABILIZED_VALUE(motorLowerLimitPower, motorUpperLimitPower) \
-		((uint32_t)motorLowerLimitPower + (motorUpperLimitPower - motorLowerLimitPower)/2)
-
-
-static void CheckSetMotorLimits(uint32_t *motorLowerLimit, uint32_t *motorUpperLimit,
-		                        uint32_t motorPower, uint32_t timeDelta)
-{
-	/*set and check lower power limits for motors*/
-	if ( *motorLowerLimit == 0 || motorPower < *motorLowerLimit  )
-	{
-		*motorLowerLimit = motorPower;
-		timeTryingHover = 0;
-	}
-	/*set and check upper power limits for motors*/
-	else if ( *motorUpperLimit == 0 || motorPower > *motorUpperLimit  )
-	{
-		*motorUpperLimit = motorPower;
-		timeTryingHover = 0;
-	}
-	/*hoverong mode*/
-	else
-	{
-		timeTryingHover += timeDelta;
-	}
-}
-
-static uint32_t CircleStabilizerModeMotorValue(float phase, uint32_t motorStabilizedValue)
-{
-	float res = CIRCLE_STABILIZER_AMPLITUDE_MOTOR*sin(2*M_PI*timeTryingHover + phase) + motorStabilizedValue;
-	return (uint32_t)res;
-}
-
-static void CircleStabilizer(uint32_t timeDelta)
-{
-	/*Stabilizing mode*/
-	/*If not yet entered hover mode, check it now*/
-	if ( timeTryingHover < CIRCLE_STABILIZER_MSTIME_TO_ENABLE )
-	{
-		CheckSetMotorLimits( &motorLowerLimitPowerM4, &motorUpperLimitPowerM4, motorPowerM4, timeDelta);
-		CheckSetMotorLimits( &motorLowerLimitPowerM2, &motorUpperLimitPowerM2, motorPowerM2, timeDelta);
-		CheckSetMotorLimits( &motorLowerLimitPowerM1, &motorUpperLimitPowerM1, motorPowerM1, timeDelta);
-		CheckSetMotorLimits( &motorLowerLimitPowerM3, &motorUpperLimitPowerM3, motorPowerM3, timeDelta);
-	}
-
-	/*If entered into hover mode*/
-	if ( timeTryingHover >= CIRCLE_STABILIZER_MSTIME_TO_ENABLE )
-	{
-		motorPowerM4 = CircleStabilizerModeMotorValue(M_PI*7/4,
-					MOTOR_STABILIZED_VALUE(motorLowerLimitPowerM4, motorUpperLimitPowerM4) );
-		motorPowerM2 = CircleStabilizerModeMotorValue(M_PI*3/4,
-							MOTOR_STABILIZED_VALUE(motorLowerLimitPowerM2, motorUpperLimitPowerM2) );
-		motorPowerM1 = CircleStabilizerModeMotorValue(0,
-							MOTOR_STABILIZED_VALUE(motorLowerLimitPowerM1, motorUpperLimitPowerM1) );
-		motorPowerM3 = CircleStabilizerModeMotorValue(M_PI,
-							MOTOR_STABILIZED_VALUE(motorLowerLimitPowerM3, motorUpperLimitPowerM3) );
-	}
-}
-
-/*******************************************************************
- * Circle stabilizer code ends
- * */
 
 static void distributePower(const uint16_t thrust, const int16_t roll,
                             const int16_t pitch, const int16_t yaw)
@@ -497,7 +421,10 @@ static void distributePower(const uint16_t thrust, const int16_t roll,
   motorPowerM4 =  limitThrust(thrust + roll - yaw);
 #endif
 
-  CircleStabilizer(2); /*500Hz ?*/
+#ifdef CIRCLE_STABILIZATION_ENABLE
+  CircleStabilizer(2, /*500Hz ?*/
+		  &motorPowerM1, &motorPowerM2, &motorPowerM3, &motorPowerM4);
+#endif
 
   motorsSetRatio(MOTOR_M1, motorPowerM1);
   motorsSetRatio(MOTOR_M2, motorPowerM2);

@@ -68,7 +68,7 @@ PROJ_OBJ += usec_time.o
 
 # Modules
 PROJ_OBJ += system.o comm.o console.o pid.o crtpservice.o param.o
-PROJ_OBJ += commander.o controller.o sensfusion6.o stabilizer.o
+PROJ_OBJ += commander.o controller.o sensfusion6.o stabilizer.o stabilizer_real_fly.o
 PROJ_OBJ += log.o worker.o
 
 # Utilities
